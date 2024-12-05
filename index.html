@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Selfie avec modèle 3D interactif</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0084FF; /* Bleu Messenger */
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            color: white;
+            opacity: 0; /* Départ invisible */
+            animation: fadeInBody 2s forwards; /* Animation fade-in sur le body */
+        }
+
+        /* Animation pour l'apparition du body */
+        @keyframes fadeInBody {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        /* Webcam et Canvas */
+        #webcam {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: -1;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            object-fit: cover;
+        }
+
+        /* Conteneur pour les titres et explications */
+        .container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            z-index: 2;
+            opacity: 0;
+            animation: fadeInContent 2s 1s forwards; /* Animation fade-in sur le contenu */
+        }
+
+        @keyframes fadeInContent {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        h1 {
+            font-size: 30px;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 18px;
+            margin: 10px 0;
+        }
+
+        /* Boutons en style Messenger */
+        .icon-button {
+            padding: 15px;
+            width: 60px;
+            height: 60px;
+            font-size: 30px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 60px;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.4);
+            margin: 10px;
+        }
+
+        .icon-button:hover {
+            background: rgba(0, 0, 0, 0.9);
+        }
+
+        .icon-button:focus {
+            outline: none;
+        }
+
+        /* Positionner les boutons en bas à gauche et à droite */
+        .button-container {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-arround;
+            padding-inline: 20px;
+            z-index: 2;
+        }
+
+        /* Section copyright style Messenger */
+        .copyright {
+            color: white;
+            font-size: 14px;
+            text-align: center;
+            margin-top: auto;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+    </style>
+</head>
+<body>
+
+<!-- Webcam et Canvas -->
+<video id="webcam" autoplay></video>
+<canvas id="3dCanvas"></canvas>
+
+<!-- Conteneur pour les titres (vide maintenant) -->
+<div class="container">
+    <h3>© CyberCraft - 2024</h3>
+</div>
+
+<!-- Boutons pour capturer et changer de caméra, positionnés à gauche et droite -->
+<div class="button-container">
+    <button id="captureButton" class="icon-button">
+        <i class="fas fa-camera"></i>
+    </button>
+    <button id="switchCameraButton" class="icon-button">
+        <i class="fas fa-sync-alt"></i>
+    </button>
+</div>
+
+<!-- Copyright -->
+<div class="copyright">
+    © 2024 Cyber Craft | Tous droits réservés
+</div>
+
+<!-- Charger Three.js, OrbitControls et GLTFLoader via jsDelivr -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+    let currentStream;
+    let currentCameraIndex = 0;
+    let videoDevices = [];
+
+    // Fonction pour accéder à la webcam
+    function setupWebcam(deviceId = null) {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+
+        const constraints = deviceId ? { video: { deviceId: { exact: deviceId } } } : { video: true };
+        navigator.mediaDevices.getUserMedia(constraints)
+            .then(function(stream) {
+                const webcam = document.getElementById('webcam');
+                webcam.srcObject = stream;
+                currentStream = stream;
+            })
+            .catch(function(err) {
+                console.error('Erreur webcam: ', err);
+            });
+    }
+
+    navigator.mediaDevices.enumerateDevices()
+        .then(devices => {
+            devices.forEach(device => {
+                if (device.kind === 'videoinput') {
+                    videoDevices.push(device);
+                }
+            });
+
+            if (videoDevices.length > 0) {
+                setupWebcam(videoDevices[0].deviceId);
+            }
+        })
+        .catch(err => console.error('Erreur lors de la liste des dispositifs: ', err));
+
+    // Initialiser Three.js pour le modèle 3D
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('3dCanvas'), alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 0); 
+
+    // Charger un modèle 3D avec plus de détails et une meilleure qualité
+    const loader = new THREE.GLTFLoader();
+    loader.load('model.glb', function (gltf) {
+        scene.add(gltf.scene);
+        gltf.scene.scale.set(2, 2, 2); 
+        gltf.scene.position.set(0, -1, 0); 
+    }, undefined, function (error) {
+        console.error(error);
+    });
+
+    // Ajouter des lumières améliorées pour un éclairage plus réaliste
+    const ambientLight = new THREE.AmbientLight(0x404040, 1); // Lumière ambiante douce
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2); // Lumière directionnelle chaude
+    directionalLight.position.set(10, 10, 10).normalize();
+    scene.add(directionalLight);
+
+    // Ajouter des lumières ponctuelles pour des effets supplémentaires
+    const pointLight1 = new THREE.PointLight(0xffffff, 0.8, 100);
+    pointLight1.position.set(5, 5, 5);
+    scene.add(pointLight1);
+
+    const pointLight2 = new THREE.PointLight(0xffffff, 0.8, 100);
+    pointLight2.position.set(-5, -5, 5);
+    scene.add(pointLight2);
+
+    // Appliquer des ombres pour un effet plus réaliste
+    scene.traverse(function (child) {
+        if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+        }
+    });
+
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Ombres douces
+
+    // Ajouter des contrôles OrbitControls pour déplacer la caméra
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    camera.position.z = 5;
+
+    // Fonction d'animation
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    // Fonction pour adapter l'aspect ratio de la caméra et de la scène
+    function updateAspectRatio() {
+        const aspectRatio = window.innerWidth / window.innerHeight; // Aspect ratio de la fenêtre
+        camera.aspect = aspectRatio; // Mettre à jour l'aspect ratio de la caméra
+        camera.updateProjectionMatrix(); // Recalculer la matrice de projection pour appliquer le changement
+
+        // Redimensionner le canvas de rendu
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Prendre une photo avec la webcam et le modèle 3D, puis télécharger
+    function takeSelfie() {
+        const webcam = document.getElementById('webcam');
+        const webcamWidth = webcam.videoWidth;
+        const webcamHeight = webcam.videoHeight;
+
+        // Créer un canvas temporaire pour capturer la photo finale
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+
+        // Calculer l'aspect ratio
+        const aspectRatio = window.innerWidth / window.innerHeight; // Aspect ratio de l'écran
+
+        // Adapter la taille du canvas à l'aspect ratio de l'écran
+        const finalWidth = window.innerWidth;
+        const finalHeight = finalWidth / aspectRatio;
+        canvas.width = finalWidth;
+        canvas.height = finalHeight;
+
+        // Dessiner la webcam sur le canvas
+        const xPos = (finalWidth - webcamWidth) / 2;
+        const yPos = (finalHeight - webcamHeight) / 2;
+        context.drawImage(webcam, xPos, yPos, webcamWidth, webcamHeight);
+
+        // Rendre la scène 3D et dessiner sur le canvas
+        renderer.render(scene, camera); // Important pour que la scène 3D soit visible
+        context.drawImage(renderer.domElement, 0, 0, finalWidth, finalHeight);
+
+        // Ajouter un filigrane "Cyber Craft" centré
+        context.font = "60px Arial";
+        context.fillStyle = "rgba(255, 255, 255, 0.5)";
+        const textWidth = context.measureText("Cyber Craft").width;
+        const xPosText = (canvas.width - textWidth) / 2;
+        context.fillText("Cyber Craft", xPosText, canvas.height / 2);
+
+        // Convertir le canvas en une image PNG
+        const dataUrl = canvas.toDataURL('image/png');
+
+        // Créer un lien de téléchargement avec un nom aléatoire
+        const randomName = 'selfie_' + Math.random().toString(36).substr(2, 9) + '.png';
+        const downloadLink = document.createElement('a');
+        downloadLink.href = dataUrl;
+        downloadLink.download = randomName;
+        downloadLink.click();
+    }
+
+    // Bouton pour prendre une photo
+    const captureButton = document.getElementById('captureButton');
+    captureButton.addEventListener('click', takeSelfie);
+
+    // Bouton pour changer de caméra
+    const switchCameraButton = document.getElementById('switchCameraButton');
+    switchCameraButton.addEventListener('click', function() {
+        currentCameraIndex = (currentCameraIndex + 1) % videoDevices.length;
+        const deviceId = videoDevices[currentCameraIndex].deviceId;
+        setupWebcam(deviceId);
+    });
+
+    // Mettre à jour l'aspect ratio lors du redimensionnement de la fenêtre
+    window.addEventListener('resize', updateAspectRatio);
+</script>
+
+</body>
+</html>
